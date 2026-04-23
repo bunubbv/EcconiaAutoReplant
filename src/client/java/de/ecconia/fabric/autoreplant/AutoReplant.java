@@ -2,43 +2,43 @@ package de.ecconia.fabric.autoreplant;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.CropBlock;
-import net.minecraft.block.NetherWartBlock;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.Item;
-import net.minecraft.item.Items;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.CropBlock;
+import net.minecraft.world.level.block.NetherWartBlock;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.Level;
 
 public class AutoReplant implements ClientModInitializer
 {
 	@Override
 	public void onInitializeClient()
 	{
-		MinecraftClient client = MinecraftClient.getInstance();
-		UseBlockCallback.EVENT.register((PlayerEntity player, World world, Hand hand, BlockHitResult hit) -> {
+		Minecraft client = Minecraft.getInstance();
+		UseBlockCallback.EVENT.register((Player player, Level world, InteractionHand _, BlockHitResult hit) -> {
 			BlockPos pos = hit.getBlockPos();
 			BlockState state = world.getBlockState(hit.getBlockPos());
 			Block block = state.getBlock();
 			
-			if(client.interactionManager == null || client.player == null)
+			if(client.gameMode == null || client.player == null)
 			{
-				return ActionResult.PASS;
+				return InteractionResult.PASS;
 			}
 			
 			if(block instanceof NetherWartBlock netherWarts)
 			{
-				if(!netherWarts.hasRandomTicks(state))
+				if(!netherWarts.isRandomlyTicking(state))
 				{
 					Item seed = Items.NETHER_WART;
 					return doTheHarvestThing(client, hit, player, pos, seed);
@@ -46,32 +46,32 @@ public class AutoReplant implements ClientModInitializer
 			}
 			else if(block instanceof CropBlock cropBlock)
 			{
-				if(cropBlock.isMature(state))
+				if(cropBlock.isMaxAge(state))
 				{
-					Item seed = cropBlock.getSeedsItem().asItem();
+					Item seed = cropBlock.getBaseSeedId().asItem();
 					return doTheHarvestThing(client, hit, player, pos, seed);
 				}
 			}
-			return ActionResult.PASS;
+			return InteractionResult.PASS;
 		});
 	}
 	
-	private ActionResult doTheHarvestThing(MinecraftClient client, BlockHitResult hit, PlayerEntity player, BlockPos pos, Item seed)
+	private InteractionResult doTheHarvestThing(Minecraft client, BlockHitResult hit, Player player, BlockPos pos, Item seed)
 	{
-		if(!client.interactionManager.attackBlock(hit.getBlockPos(), hit.getSide()))
+		if(!client.gameMode.startDestroyBlock(hit.getBlockPos(), hit.getDirection()))
 		{
-			player.sendMessage(Text.literal("[AutoReplant] Not able to break block..."), false);
+			player.sendSystemMessage(Component.literal("[AutoReplant] Not able to break block..."));
 			//At this point, normal interaction may happen:
-			return ActionResult.PASS;
+			return InteractionResult.PASS;
 		}
 		//From here on, the script must fail.
 		
 		//Select wheat seeds in the hotbar (given there are some in there...)
-		PlayerInventory playerInventory = player.getInventory();
+		Inventory playerInventory = player.getInventory();
 		int matchingSlot = -1;
 		for(int i = 0; i < 9; i++)
 		{
-			if(playerInventory.getStack(i).getItem() == seed)
+			if(playerInventory.getItem(i).getItem() == seed)
 			{
 				matchingSlot = i;
 				break;
@@ -80,20 +80,20 @@ public class AutoReplant implements ClientModInitializer
 		if(matchingSlot == -1)
 		{
 			//End life:
-			return ActionResult.FAIL;
+			return InteractionResult.FAIL;
 		}
 		playerInventory.setSelectedSlot(matchingSlot);
 		
-		BlockPos fieldBlockPos = pos.down();
-		if(!client.interactionManager.interactBlock(client.player, Hand.MAIN_HAND, new BlockHitResult(
-				new Vec3d(fieldBlockPos.getX() + 0.5f, fieldBlockPos.getY() + 0.9375f, fieldBlockPos.getZ() + 0.5f),
+		BlockPos fieldBlockPos = pos.below();
+		if(!client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, new BlockHitResult(
+				new Vec3(fieldBlockPos.getX() + 0.5f, fieldBlockPos.getY() + 0.9375f, fieldBlockPos.getZ() + 0.5f),
 				Direction.UP,
-				hit.getBlockPos().down(),
+				hit.getBlockPos().below(),
 				false)
-		).isAccepted())
+		).consumesAction())
 		{
-			player.sendMessage(Text.literal("[AutoReplant] Failed to interact with block..."), false);
+			player.sendSystemMessage(Component.literal("[AutoReplant] Failed to interact with block..."));
 		}
-		return ActionResult.FAIL;
+		return InteractionResult.FAIL;
 	}
 }
